@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>课程表在线转换</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", -apple-system, sans-serif;
+    background: #f0f3f8; color: #1f2937; line-height: 1.6; padding: 32px 16px;
+  }
+  .container { max-width: 1080px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 28px; }
+  header h1 { font-size: 28px; color: #1e3a5f; margin-bottom: 8px; }
+  header p { color: #6b7280; font-size: 14px; }
+
+  .card {
+    background: #fff; border-radius: 12px; padding: 22px 24px; margin-bottom: 20px;
+    box-shadow: 0 2px 10px rgba(30,58,95,.07);
+  }
+  .card h2 { font-size: 17px; color: #1e3a5f; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .tag { font-size: 12px; font-weight: normal; background: #e8f0fe; color: #1a56db; padding: 2px 10px; border-radius: 10px; }
+  .tag.builtin { background: #e6f7ee; color: #0a7a42; }
+
+  .upload-row { display: flex; gap: 20px; flex-wrap: wrap; }
+  .upload-box {
+    flex: 1; min-width: 300px; border: 2px dashed #c4d2e3; border-radius: 10px;
+    padding: 22px; text-align: center; cursor: pointer; transition: .15s; background: #fafcff;
+  }
+  .upload-box:hover, .upload-box.drag { border-color: #1a56db; background: #f0f6ff; }
+  .upload-box .icon { font-size: 30px; margin-bottom: 6px; }
+  .upload-box .main { font-size: 15px; color: #1e3a5f; font-weight: 600; }
+  .upload-box .sub { font-size: 12px; color: #8a97a8; margin-top: 4px; }
+  .file-name {
+    margin-top: 10px; font-size: 13px; color: #0a7a42; word-break: break-all;
+  }
+  .file-name.master { color: #1a56db; }
+  input[type=file] { display: none; }
+
+  .btn {
+    display: inline-block; border: none; border-radius: 8px; padding: 11px 34px;
+    font-size: 15px; font-weight: 600; cursor: pointer; transition: .15s;
+  }
+  .btn-primary { background: #1a56db; color: #fff; }
+  .btn-primary:hover { background: #1447b8; }
+  .btn-primary:disabled { background: #9db4dd; cursor: not-allowed; }
+  .btn-ghost { background: #eef2f7; color: #374151; padding: 7px 18px; font-size: 13px; }
+  .btn-ghost:hover { background: #dde4ee; }
+  .btn-success { background: #0a7a42; color: #fff; }
+  .btn-success:hover { background: #086335; }
+  .actions { text-align: center; margin: 8px 0 24px; }
+
+  .warnings { margin-bottom: 16px; }
+  .warn-item {
+    border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-bottom: 8px;
+    display: flex; gap: 8px; align-items: flex-start;
+  }
+  .warn-item.warn { background: #fff8e6; border: 1px solid #f3d488; color: #8a6116; }
+  .warn-item.error { background: #fdeeee; border: 1px solid #f1b4b4; color: #a12828; }
+  .warn-item.info { background: #eef5ff; border: 1px solid #bcd2f5; color: #1d4d9e; }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 760px; }
+  th, td { border: 1px solid #dbe3ee; padding: 0; text-align: center; }
+  th { background: #1e3a5f; color: #fff; padding: 10px 8px; font-weight: 600; white-space: nowrap; }
+  td input {
+    width: 100%; border: none; padding: 9px 8px; text-align: center; font-size: 13.5px;
+    background: transparent; color: #1f2937;
+  }
+  td input:focus { outline: 2px solid #1a56db; outline-offset: -2px; background: #fff; }
+  td:first-child input { text-align: left; }
+  td.del { width: 42px; }
+  .del-btn { border: none; background: none; color: #c0392b; font-size: 16px; cursor: pointer; padding: 8px; }
+  .del-btn:hover { color: #922b21; }
+  tr:nth-child(even) td { background: #f8fafd; }
+  tr:nth-child(even) td input { background: transparent; }
+
+  .result-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }
+  .result-bar .count { font-size: 13px; color: #6b7280; }
+  .hidden { display: none; }
+  .error-box {
+    background: #fdeeee; border: 1px solid #f1b4b4; color: #a12828;
+    border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-top: 10px;
+  }
+  footer { text-align: center; color: #9aa6b6; font-size: 12px; margin-top: 28px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>课程表在线转换</h1>
+    <p>上传你的个人课表（schedule 格式），自动对照总课表补全老师、地点与周数，输出为标准模板格式</p>
+  </header>
+
+  <div class="card">
+    <h2>① 选择文件</h2>
+    <div class="upload-row">
+      <label class="upload-box" id="studentBox">
+        <div class="icon">📘</div>
+        <div class="main">上传我的课表</div>
+        <div class="sub">点击选择 .xls / .xlsx 文件，格式同 schedule 示例</div>
+        <div class="file-name" id="studentName"></div>
+        <input type="file" id="studentInput" accept=".xls,.xlsx">
+      </label>
+
+      <div class="upload-box" id="masterBox" style="cursor:default">
+        <div class="icon">📚</div>
+        <div class="main">总课表 <span class="tag builtin">已内置</span></div>
+        <div class="sub">默认使用内置总课表，也可点击按钮上传替换</div>
+        <div class="file-name master" id="masterName"></div>
+        <div style="margin-top:12px; display:flex; gap:8px; justify-content:center;">
+          <button type="button" class="btn btn-ghost" id="masterReplaceBtn">上传替换总课表</button>
+          <button type="button" class="btn btn-ghost hidden" id="masterResetBtn">恢复内置总课表</button>
+        </div>
+        <input type="file" id="masterInput" accept=".xls,.xlsx">
+      </div>
+    </div>
+    <div id="fileError" class="error-box hidden"></div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" id="convertBtn">确 定 转 换</button>
+  </div>
+
+  <div class="card hidden" id="resultCard">
+    <div class="result-bar">
+      <h2 style="margin:0">② 转换结果 <span class="tag">可直接编辑修改</span></h2>
+      <span class="count" id="rowCount"></span>
+    </div>
+    <div class="warnings" id="warnings"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>课程名称</th><th>星期</th><th>开始节数</th><th>结束节数</th>
+            <th>老师</th><th>地点</th><th>周数</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="resultBody"></tbody>
+      </table>
+    </div>
+    <div class="actions" style="margin:18px 0 0;">
+      <button class="btn btn-success" id="downloadBtn">⬇ 下载结果（.csv）</button>
+    </div>
+  </div>
+
+  <footer>所有解析均在浏览器本地完成，文件不会上传到服务器</footer>
+</div>
+
+<script src="assets/embedded-data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+'use strict';
+const state = {
+  student: null,                 // {name, bytes}
+  master: { name: window.BUILTIN_MASTER_NAME, bytes: b64ToBytes(window.BUILTIN_MASTER_B64), builtin: true },
+};
+
+const $ = id => document.getElementById(id);
+
+function showError(msg) {
+  const box = $('fileError');
+  if (!msg) { box.classList.add('hidden'); box.textContent = ''; return; }
+  box.textContent = msg; box.classList.remove('hidden');
+}
+
+function readFile(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(new Uint8Array(fr.result));
+    fr.onerror = reject;
+    fr.readAsArrayBuffer(file);
+  });
+}
+
+/* 学生课表上传 */
+$('studentBox').addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') $('studentInput').click(); });
+$('studentInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    state.student = { name: file.name, bytes: await readFile(file) };
+    $('studentName').textContent = '✓ ' + file.name;
+    showError('');
+  } catch (err) { showError('读取个人课表失败：' + err.message); }
+});
+
+/* 总课表上传替换 */
+$('masterBox').addEventListener('dragover', e => { e.preventDefault(); $('masterBox').classList.add('drag'); });
+$('masterBox').addEventListener('dragleave', () => $('masterBox').classList.remove('drag'));
+$('masterBox').addEventListener('drop', async e => {
+  e.preventDefault(); $('masterBox').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) await loadMaster(file);
+});
+$('masterReplaceBtn').addEventListener('click', e => { e.stopPropagation(); $('masterInput').click(); });
+$('masterInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (file) await loadMaster(file);
+});
+$('masterResetBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  state.master = { name: BUILTIN_MASTER_NAME, bytes: b64ToBytes(BUILTIN_MASTER_B64), builtin: true };
+  renderMasterName();
+});
+
+async function loadMaster(file) {
+  try {
+    state.master = { name: file.name, bytes: await readFile(file), builtin: false };
+    renderMasterName();
+    showError('');
+  } catch (err) { showError('读取总课表失败：' + err.message); }
+}
+function renderMasterName() {
+  $('masterName').textContent = (state.master.builtin ? '✓ 内置：' : '✓ 已替换：') + state.master.name;
+  $('masterResetBtn').classList.toggle('hidden', state.master.builtin);
+}
+renderMasterName();
+
+/* 转换 */
+$('convertBtn').addEventListener('click', () => {
+  showError('');
+  if (!state.student) { showError('请先上传你的个人课表文件。'); return; }
+  try {
+    const swb = readWorkbook(state.student.bytes);
+    const sname = swb.SheetNames[0];
+    const srows = XLSX.utils.sheet_to_json(swb.Sheets[sname], { header: 1, raw: true, defval: '' });
+    const mwb = readWorkbook(state.master.bytes);
+    const { results, warnings } = convertAll(srows, mwb);
+    renderResults(results, warnings);
+  } catch (err) {
+    $('resultCard').classList.add('hidden');
+    showError('转换失败：' + err.message);
+  }
+});
+
+function renderResults(results, warnings) {
+  const body = $('resultBody');
+  body.innerHTML = '';
+  results.forEach(row => {
+    const tr = document.createElement('tr');
+    ['课程名称','星期','开始节数','结束节数','老师','地点','周数'].forEach(key => {
+      const td = document.createElement('td');
+      const inp = document.createElement('input');
+      inp.value = row[key] || '';
+      inp.dataset.key = key;
+      td.appendChild(inp);
+      tr.appendChild(td);
+    });
+    const tdDel = document.createElement('td');
+    tdDel.className = 'del';
+    const del = document.createElement('button');
+    del.className = 'del-btn'; del.innerHTML = '✕'; del.title = '删除此行';
+    del.onclick = () => { tr.remove(); updateCount(); };
+    tdDel.appendChild(del);
+    tr.appendChild(tdDel);
+    body.appendChild(tr);
+  });
+
+  const wbox = $('warnings');
+  wbox.innerHTML = '';
+  warnings.forEach(w => {
+    const d = document.createElement('div');
+    d.className = 'warn-item ' + w.level;
+    d.textContent = (w.level === 'error' ? '✕ ' : w.level === 'warn' ? '⚠ ' : 'ℹ ') + w.text;
+    wbox.appendChild(d);
+  });
+
+  $('resultCard').classList.remove('hidden');
+  updateCount();
+  $('resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function updateCount() {
+  $('rowCount').textContent = `共 ${$('resultBody').rows.length} 门课程`;
+}
+
+/* 下载 CSV：严格保持模板表头与列顺序；带 UTF-8 BOM，Windows Excel 打开中文不乱码 */
+$('downloadBtn').addEventListener('click', () => {
+  const headers = ['课程名称','星期','开始节数','结束节数','老师','地点','周数'];
+  const csvEscape = v => {
+    v = (v || '').trim();
+    return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  };
+  const lines = [headers.map(csvEscape).join(',')];
+  for (const tr of $('resultBody').rows) {
+    const vals = {};
+    tr.querySelectorAll('input').forEach(inp => { vals[inp.dataset.key] = inp.value; });
+    if (!vals['课程名称'] || !vals['课程名称'].trim()) continue;
+    lines.push(headers.map(h => csvEscape(vals[h] || '')).join(','));
+  }
+  if (lines.length === 1) { alert('没有可导出的课程行。'); return; }
+
+  const csv = '\ufeff' + lines.join('\r\n');   // BOM + CRLF，兼容 Excel
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '转换后课表.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
